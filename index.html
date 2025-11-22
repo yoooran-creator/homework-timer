@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>写作业计时器 v1.6</title> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>写作业计时器 v1.7</title> 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
@@ -11,7 +11,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Zcool+KuaiLe&display=swap" rel="stylesheet">
     <style>
-        /* 4. 版本号变成v1.6 */
         /* 5. 状态栏匹配优化：将 body 背景设为顶部标题栏的颜色，视觉上匹配 */
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-tap-highlight-color: transparent; background-color: #4f46e5; }
         .fun-font { font-family: 'Zcool KuaiLe', cursive; }
@@ -31,57 +30,13 @@
         .collapse-enter-active, .collapse-leave-active { transition: all 0.3s ease-in-out; max-height: 500px; opacity: 1; }
         .collapse-enter-from, .collapse-leave-to { max-height: 0; opacity: 0; }
         .rotate-180 { transform: rotate(180deg); }
-
-        /* 1. 心愿添加界面的输入法遮挡问题修复 */
-        .add-item-modal { 
-            position: fixed; 
-            top: 0; 
-            right: 0; 
-            bottom: 0; 
-            left: 0; 
-            z-index: 50; /* 确保在 shop modal 之上 */
-            background-color: white; 
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* 3. 后台计时进度条的样式 */
-        .task-tracker {
-            height: 10px;
-            width: 100%;
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            background-color: #4f46e5; 
-            box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
-        }
-        .task-rocket {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 20px;
-            height: 20px;
-            transition: left 1s linear;
-        }
-        .task-rocket-tip {
-            position: absolute;
-            top: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            white-space: nowrap;
-            padding: 2px 6px;
-            border-radius: 6px;
-            font-size: 10px;
-            font-weight: bold;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 select-none h-screen overflow-hidden">
 
 <div id="app" class="h-full flex flex-col max-w-md mx-auto bg-white shadow-2xl relative">
 
-    <input type="hidden" id="appVersion" value="v1.6"> 
+    <input type="hidden" id="appVersion" value="v1.7"> 
     <audio id="cheerAudio" src="https://www.soundjay.com/human/sounds/applause-01.mp3" preload="auto"></audio>
     <audio id="magicAudio" src="https://www.soundjay.com/misc/sounds/magic-chime-01.mp3" preload="auto"></audio>
 
@@ -114,20 +69,6 @@
                     <div class="flex flex-col items-center flex-1 text-center">
                         <span class="text-indigo-200 text-xs">进度:</span>
                         <span class="text-white font-bold text-lg">{{ statsToday.successCount }}/{{ statsToday.count }}</span>
-                    </div>
-                </div>
-
-                <div v-if="!isTimerActive && isTaskPaused" class="task-tracker" 
-                     :style="{'--rocket-left': taskProgress + '%'}">
-                    
-                    <div class="task-rocket" :style="{left: taskProgress + '%'}">
-                        <div class="task-rocket-tip" 
-                             :class="isOvertime ? 'bg-red-500 text-white' : 'bg-indigo-500 text-white'">
-                            <span v-if="!isOvertime">剩余: {{ formattedTimeForBg }}</span>
-                            <span v-else>超时: +{{ formattedTimeForBg }}</span>
-                        </div>
-                        <span class="text-xl inline-block transition-transform duration-300" 
-                              :class="isOvertime ? 'text-red-500 rotate-90' : 'text-yellow-300 -rotate-90'">🚀</span>
                     </div>
                 </div>
             </div>
@@ -421,8 +362,7 @@
                 </button>
                 <button @click="finishTask" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition">✅ 完成</button>
             </div>
-            <div class="flex justify-center gap-6">
-                <button @click="exitFocusMode" class="py-3 text-slate-500 text-sm underline hover:text-slate-300">退出专注模式</button>
+            <div class="flex justify-center">
                 <button @click="cancelTimer" class="py-3 text-slate-500 text-sm underline hover:text-slate-300">放弃此任务</button>
             </div>
         </div>
@@ -491,18 +431,16 @@
                     <button @click="resetShop" class="text-white/80 underline text-sm hover:text-white">返回商城</button>
                 </div>
             </div>
-            <div v-if="showAddItemMode" class="add-item-modal pop-in">
-                <div class="p-6 flex flex-col h-full">
-                    <h3 class="font-bold text-lg mb-4">添加心愿</h3>
-                    <input v-model="newItem.name" placeholder="名称" class="mb-3 p-3 border rounded-xl bg-slate-50 font-bold" @keyup.enter="$event.target.blur()">
-                    <input v-model.number="newItem.price" type="number" placeholder="积分" class="mb-3 p-3 border rounded-xl bg-slate-50 font-bold" @keyup.enter="$event.target.blur()">
-                    <div class="flex-1 overflow-y-auto grid grid-cols-5 gap-2 mb-4 content-start mt-5 px-2 pt-2">
-                        <button v-for="icon in iconPack" :key="icon" @click="newItem.emoji = icon" class="text-2xl p-2 rounded-lg hover:bg-slate-100 transition" :class="newItem.emoji===icon ? 'bg-indigo-100 ring-2 ring-indigo-500' : ''">{{ icon }}</button>
-                    </div>
-                    <div class="flex gap-3 mt-auto flex-shrink-0">
-                        <button @click="addCustomItem" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold">确认</button>
-                        <button @click="showAddItemMode=false" class="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl font-bold">取消</button>
-                    </div>
+            <div v-if="showAddItemMode" class="absolute inset-0 bg-white z-50 p-6 flex flex-col pop-in">
+                <h3 class="font-bold text-lg mb-4">添加心愿</h3>
+                <input v-model="newItem.name" placeholder="名称" class="mb-3 p-3 border rounded-xl bg-slate-50 font-bold">
+                <input v-model.number="newItem.price" type="number" placeholder="积分" class="mb-3 p-3 border rounded-xl bg-slate-50 font-bold">
+                <div class="flex-1 overflow-y-auto grid grid-cols-5 gap-2 mb-4 content-start mt-5 px-2 pt-2">
+                    <button v-for="icon in iconPack" :key="icon" @click="newItem.emoji = icon" class="text-2xl p-2 rounded-lg hover:bg-slate-100 transition" :class="newItem.emoji===icon ? 'bg-indigo-100 ring-2 ring-indigo-500' : ''">{{ icon }}</button>
+                </div>
+                <div class="flex gap-3 mt-auto">
+                    <button @click="addCustomItem" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold">确认</button>
+                    <button @click="showAddItemMode=false" class="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl font-bold">取消</button>
                 </div>
             </div>
         </div>
@@ -515,7 +453,7 @@
     <div v-if="editModal.show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl pop-in">
             <h3 class="font-bold text-lg mb-4 text-center">修改固定任务</h3>
-            <input v-model="editModal.data.content" class="w-full p-2 border border-slate-200 rounded-lg font-bold text-slate-700 mb-4" @keyup.enter="$event.target.blur()">
+            <input v-model="editModal.data.content" class="w-full p-2 border border-slate-200 rounded-lg font-bold text-slate-700 mb-4">
             <div class="mb-6"><label class="text-xs text-slate-400 block mb-1">预估时长: <span class="text-indigo-600 font-bold">{{editModal.data.estimate}}分钟</span></label><input type="range" v-model.number="editModal.data.estimate" min="3" max="35" step="0.5" class="w-full accent-indigo-600"></div>
             <div class="flex gap-3"><button @click="saveFixedEdit" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold">保存</button><button @click="editModal.show=false" class="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold">取消</button></div>
         </div>
@@ -531,8 +469,8 @@
 <script>
 const { createApp, reactive, computed, ref, onMounted, watch, nextTick } = Vue;
 
-// 4. 版本号变成v1.6
-const VERSION = 'v1.6';
+// 8. 版本号变成v1.7
+const VERSION = 'v1.7';
 
 createApp({
     setup() {
@@ -583,13 +521,6 @@ createApp({
         let pauseStartTime = 0;
         let totalPauseDuration = 0;
 
-        // 3. 退出专注模式后的后台计时状态和时间，以及额外的计时器
-        const isTaskPaused = ref(false); // 表示任务是否在后台计时 (退出专注模式/暂停后)
-        const activeTaskForBg = ref(null); // 存储在后台计时的任务
-        let backgroundTimerInt = null;
-        let backgroundStartTimeStamp = 0;
-        let backgroundPauseDuration = 0;
-        
         const expandedTasks = reactive({});
         const toggleExpansion = (taskId) => {
             expandedTasks[taskId] = !expandedTasks[taskId];
@@ -605,61 +536,7 @@ createApp({
             fixed: 'hw_v8_fixed',
             today: 'hw_v8_today',
             history: 'hw_v8_hist',
-            shop: 'hw_v8_shop',
-            // 新增: 后台任务状态
-            bgTimer: 'hw_v8_bgtimer'
-        };
-
-        const saveBgTimerState = () => {
-            if (isTaskPaused.value && activeTaskForBg.value) {
-                localStorage.setItem(localStorageKeys.bgTimer, JSON.stringify({
-                    activeTask: activeTaskForBg.value,
-                    startTimeStamp: backgroundStartTimeStamp,
-                    totalEstimateSec: totalEstimateSec.value,
-                    elapsedTime: elapsedTime.value,
-                    totalPauseDuration: backgroundPauseDuration,
-                    isPaused: isPaused.value 
-                }));
-            } else {
-                localStorage.removeItem(localStorageKeys.bgTimer);
-            }
-        };
-        
-        const loadBgTimerState = () => {
-            const savedState = JSON.parse(localStorage.getItem(localStorageKeys.bgTimer));
-            if (savedState) {
-                activeTask.value = savedState.activeTask;
-                activeTaskForBg.value = savedState.activeTask;
-                totalEstimateSec.value = savedState.totalEstimateSec;
-                elapsedTime.value = savedState.elapsedTime;
-                backgroundStartTimeStamp = savedState.startTimeStamp;
-                backgroundPauseDuration = savedState.totalPauseDuration;
-                isTaskPaused.value = true;
-                isPaused.value = savedState.isPaused; 
-
-                // 重新启动后台计时器
-                if (!isPaused.value) {
-                     // 重新计算 elapsed time: 之前保存的已用时间 + (当前时间 - 之前保存的时间戳 - 之前保存的暂停时间)
-                    const now = Date.now();
-                    const newElapsedTime = savedState.elapsedTime + Math.round((now - savedState.startTimeStamp - savedState.totalPauseDuration) / 1000);
-                    elapsedTime.value = newElapsedTime;
-                    backgroundStartTimeStamp = now; // 重置开始时间戳以计算新的流逝时间
-                    backgroundPauseDuration = 0;    // 重置暂停时间
-                    startBackgroundTimer();
-                }
-            }
-        };
-
-        const startBackgroundTimer = () => {
-            clearInterval(backgroundTimerInt);
-            backgroundTimerInt = setInterval(() => {
-                if(!isPaused.value) { 
-                    const current = Date.now();
-                    // 累积计算总的已用时间: 初始值 + (当前时间 - 开始时间 - 暂停时间)
-                    elapsedTime.value = savedState.elapsedTime + Math.round((current - backgroundStartTimeStamp - backgroundPauseDuration) / 1000); 
-                    saveBgTimerState();
-                }
-            }, 1000);
+            shop: 'hw_v8_shop'
         };
 
         onMounted(() => {
@@ -675,8 +552,6 @@ createApp({
             fixedTasks.value.forEach(ft => {
                 expandedTasks[ft.id] = false;
             });
-
-            loadBgTimerState(); // 加载后台计时状态
         });
 
         watch([totalPoints, fixedTasks, todaysTasks, history, shopItems], () => {
@@ -686,9 +561,6 @@ createApp({
             localStorage.setItem(localStorageKeys.history, JSON.stringify(history.value));
             localStorage.setItem(localStorageKeys.shop, JSON.stringify(shopItems.value));
         }, { deep: true });
-        
-        watch([isTaskPaused, activeTaskForBg, totalEstimateSec, elapsedTime, backgroundPauseDuration, isPaused], saveBgTimerState);
-
 
         // 4. 清除缓存功能
         const clearCache = () => {
@@ -700,14 +572,6 @@ createApp({
                 todaysTasks.value = [];
                 history.value = [];
                 shopItems.value = [];
-                // 重置计时状态
-                clearInterval(timerInt);
-                clearInterval(backgroundTimerInt);
-                isTimerActive.value = false;
-                isTaskPaused.value = false;
-                activeTask.value = null;
-                activeTaskForBg.value = null;
-
                 alert("缓存已清除，数据已重置。");
                 currentTab.value = 'tasks'; // 切换到首页
             }
@@ -854,11 +718,6 @@ createApp({
 
         const addNewTask = () => {
             if(!form.content) return;
-            // 1. 确保输入完成后输入法面板消失
-            if(document.activeElement && document.activeElement.tagName === 'INPUT') {
-                document.activeElement.blur();
-            }
-
             const task = { id: Date.now(), subject: form.subject, content: form.content, estimate: form.estimate, isFixed: form.isFixed };
             if(form.isFixed) {
                 fixedTasks.value.push(task);
@@ -867,6 +726,11 @@ createApp({
                 todaysTasks.value.push({ ...task, isCompleted: false });
             }
             form.content = ''; showToast.value = true; setTimeout(() => showToast.value = false, 2000);
+            
+            // 7. 确保输入完成后输入法面板消失
+            if(document.activeElement && document.activeElement.tagName === 'INPUT') {
+                document.activeElement.blur();
+            }
         };
         const deleteFixedTask = (idx) => {
             const taskId = fixedTasks.value[idx].id;
@@ -882,10 +746,6 @@ createApp({
             }
         };
         const saveFixedEdit = () => {
-            // 1. 确保输入完成后输入法面板消失
-            if(document.activeElement && document.activeElement.tagName === 'INPUT') {
-                document.activeElement.blur();
-            }
             const { idx, content, estimate } = editModal.data;
             if(idx > -1) { fixedTasks.value[idx].content=content; fixedTasks.value[idx].estimate=estimate; }
             editModal.show=false;
@@ -901,103 +761,25 @@ createApp({
             shopState.opened = true; confetti({ particleCount: 200, spread: 120, origin: { y: 0.6 }, zIndex: 1000 });
         };
         const resetShop = () => { shopState.revealed = false; shopState.reward = null; };
-        const addCustomItem = () => { 
-            if(!newItem.name) return;
-            // 1. 确保输入完成后输入法面板消失
-            if(document.activeElement && document.activeElement.tagName === 'INPUT') {
-                document.activeElement.blur();
-            }
-            shopItems.value.push({...newItem}); showAddItemMode.value=false; newItem.name=''; 
-        };
+        const addCustomItem = () => { if(newItem.name) { shopItems.value.push({...newItem}); showAddItemMode.value=false; newItem.name=''; } };
 
         const startTimer = (t) => {
-            clearInterval(backgroundTimerInt); // 停止后台计时
-            isTaskPaused.value = false;
-            activeTaskForBg.value = null; // 清除后台任务
-
-            activeTask.value = t; 
-            totalEstimateSec.value = t.estimate * 60; 
-            elapsedTime.value = 0; 
-            startTimeStamp = Date.now();
-            isTimerActive.value = true; 
-            isPaused.value = false; 
-            totalPauseDuration = 0; 
-            
-            clearInterval(timerInt);
+            activeTask.value = t; totalEstimateSec.value = t.estimate * 60; elapsedTime.value = 0; startTimeStamp = Date.now();
+            isTimerActive.value = true; isPaused.value = false; totalPauseDuration = 0; clearInterval(timerInt);
             timerInt = setInterval(() => {
-                if(!isPaused.value) { 
-                    const current = Date.now(); 
-                    elapsedTime.value = Math.round((current - startTimeStamp - totalPauseDuration) / 1000); 
-                }
+                if(!isPaused.value) { const current = Date.now(); elapsedTime.value = Math.round((current - startTimeStamp - totalPauseDuration) / 1000); }
             }, 1000);
         };
-        const togglePause = () => { 
-            isPaused.value = !isPaused.value; 
-            if (isPaused.value) {
-                pauseStartTime = Date.now(); 
-            } else {
-                const pauseDuration = Date.now() - pauseStartTime;
-                totalPauseDuration += pauseDuration;
-                backgroundPauseDuration += pauseDuration; // 更新后台计时器的暂停时间
-            } 
-        };
-        const cancelTimer = () => { 
-            if(confirm("放弃?")) { 
-                clearInterval(timerInt); 
-                clearInterval(backgroundTimerInt); // 确保后台计时也停止
-                isTimerActive.value=false; 
-                isTaskPaused.value = false; // 取消任务后，清除后台任务状态
-                activeTaskForBg.value = null;
-            } 
-        };
+        const togglePause = () => { isPaused.value = !isPaused.value; if (isPaused.value) pauseStartTime = Date.now(); else totalPauseDuration += (Date.now() - pauseStartTime); };
+        const cancelTimer = () => { if(confirm("放弃?")) { clearInterval(timerInt); isTimerActive.value=false; } };
         
-        // 3. 退出专注模式功能 (继续后台计时)
-        const exitFocusMode = () => {
-             if(confirm("退出专注模式后，计时将转移到后台继续运行。确认退出吗？")) {
-                clearInterval(timerInt);
-                isTimerActive.value = false;
-                
-                // 将当前计时状态转移到后台计时
-                activeTaskForBg.value = activeTask.value;
-                backgroundStartTimeStamp = startTimeStamp; // 沿用开始时间
-                backgroundPauseDuration = totalPauseDuration; // 沿用暂停时间
-                isTaskPaused.value = true;
-                
-                // 重新启动后台计时器
-                if (!isPaused.value) {
-                    startBackgroundTimer();
-                } else {
-                    // 如果是暂停状态，不需要启动 interval，但需要保存状态
-                    saveBgTimerState();
-                }
-                
-                // 切换到任务页
-                currentTab.value = 'tasks';
-             }
-        };
+        // 已移除 '退出专注模式' 功能
 
         const finishTask = () => {
             clearInterval(timerInt);
-            clearInterval(backgroundTimerInt);
-            
-            // 确定最终的实际耗时
-            let finalActual = 0;
-            if(isTimerActive.value) {
-                if(isPaused.value) totalPauseDuration += (Date.now() - pauseStartTime);
-                finalActual = Math.round((Date.now() - startTimeStamp - totalPauseDuration) / 1000);
-            } else if (isTaskPaused.value) {
-                // 任务是在后台完成的
-                if(isPaused.value) backgroundPauseDuration += (Date.now() - pauseStartTime);
-                finalActual = Math.round((Date.now() - backgroundStartTimeStamp - backgroundPauseDuration) / 1000);
-            }
-
-            const activeT = activeTask.value || activeTaskForBg.value;
-            if(!activeT) return; // 应该不会发生
-
-            const est = totalEstimateSec.value; 
-            const diff = finalActual - est; 
-            const isSuccess = diff <= 0; 
-            const pts = isSuccess ? 100 : 30;
+            if(isPaused.value) totalPauseDuration += (Date.now() - pauseStartTime);
+            const actual = Math.round((Date.now() - startTimeStamp - totalPauseDuration) / 1000);
+            const est = totalEstimateSec.value; const diff = actual - est; const isSuccess = diff <= 0; const pts = isSuccess ? 100 : 30;
             
             const audio = document.getElementById('cheerAudio');
             if(audio) { 
@@ -1013,29 +795,22 @@ createApp({
             if(isSuccess) confetti({ particleCount: 200, spread: 100, zIndex: 100 });
 
             history.value.push({
-                id: Date.now(), content: activeT.content, subject: activeT.subject, estimate: activeT.estimate,
-                actualDuration: finalActual, timestamp: Date.now(), isFixed: activeT.isFixed, fixedTemplateId: activeT.isFixed ? activeT.id : null
+                id: Date.now(), content: activeTask.value.content, subject: activeTask.value.subject, estimate: activeTask.value.estimate,
+                actualDuration: actual, timestamp: Date.now(), isFixed: activeTask.value.isFixed, fixedTemplateId: activeTask.value.isFixed ? activeTask.value.id : null
             });
             
-            if(!activeT.isFixed) { const tt = todaysTasks.value.find(x => x.id === activeT.id); if(tt) { tt.isCompleted = true; tt.actualDuration = finalActual; } }
+            if(!activeTask.value.isFixed) { const tt = todaysTasks.value.find(x => x.id === activeTask.value.id); if(tt) { tt.isCompleted = true; tt.actualDuration = actual; } }
             
             totalPoints.value += pts;
             
             const finalEmoji = isSuccess ? successEmojis[Math.floor(Math.random() * successEmojis.length)] : "👍";
 
-            reward.estimate = activeT.estimate; reward.actual = finalActual; reward.diff = diff; reward.points = pts; reward.isSuccess = isSuccess;
+            reward.estimate = activeTask.value.estimate; reward.actual = actual; reward.diff = diff; reward.points = pts; reward.isSuccess = isSuccess;
             reward.title = isSuccess ? "挑战成功!" : "任务完成"; reward.message = isSuccess ? "时间管理大师！" : "稍微有点超时，下次加油！";
-            reward.emoji = finalEmoji; reward.show = true; 
-            
-            // 重置所有计时状态
-            isTimerActive.value = false;
-            isTaskPaused.value = false;
-            activeTaskForBg.value = null;
-            activeTask.value = null;
+            reward.emoji = finalEmoji; reward.show = true; isTimerActive.value = false;
         };
         const closeReward = () => { reward.show = false; };
 
-        // 用于专注模式的计算属性
         const isOvertime = computed(() => elapsedTime.value > totalEstimateSec.value);
         const formattedTime = computed(() => {
             let s = elapsedTime.value; 
@@ -1047,29 +822,6 @@ createApp({
         });
         const progressOffset = computed(() => { if(isOvertime.value) return 0; return (2 * Math.PI * 135) * (1 - (totalEstimateSec.value - elapsedTime.value) / totalEstimateSec.value); });
         const timerColor = computed(() => { if(isOvertime.value) return '#ef4444'; const pct = (totalEstimateSec.value - elapsedTime.value) / totalEstimateSec.value; return pct > 0.5 ? '#4f46e5' : '#f97316'; });
-        
-        // 3. 用于后台计时进度条的计算属性
-        const formattedTimeForBg = computed(() => {
-            let s = elapsedTime.value;
-            if(isOvertime.value) s = elapsedTime.value - totalEstimateSec.value;
-            else s = totalEstimateSec.value - elapsedTime.value;
-            const m = Math.floor(s / 60).toString().padStart(2, '0');
-            const ss = (s % 60).toString().padStart(2, '0');
-            return `${m}:${ss}`;
-        });
-
-        const taskProgress = computed(() => {
-            if (!isTaskPaused.value || !activeTaskForBg.value) return 0;
-            const estSec = totalEstimateSec.value;
-            const elapsed = elapsedTime.value;
-            
-            // 进度条在预估时间内从 0% 到 100%
-            if (elapsed <= estSec) {
-                return Math.min(100, (elapsed / estSec) * 100);
-            } 
-            // 超时后，进度条保持 100%
-            return 100;
-        });
 
         const loadChartForTask = (ftId) => {
             const ctx = document.getElementById('chart-' + ftId);
@@ -1135,7 +887,7 @@ createApp({
             statsToday, currentMonthStats, calendarOffset,
             currentMonthDisplay, changeMonth, canGoBackMonth, canGoForwardMonth,
             addNewTask, deleteFixedTask, openEditModal, saveFixedEdit, buyItem, openBox, resetShop, addCustomItem,
-            startTimer, togglePause, finishTask, cancelTimer, exitFocusMode, loadStatsCharts, closeReward, // 导出 exitFocusMode
+            startTimer, togglePause, finishTask, cancelTimer, loadStatsCharts, closeReward,
             getSubjectBadgeColor, getSubjectColor, getDiffClass, getDiffText, getTaskStats, formatDuration, formatDiff,
             
             expandedTasks,
@@ -1143,13 +895,7 @@ createApp({
             // 导出功能
             exportHistory,
             // 导出清除缓存功能
-            clearCache,
-            
-            // 3. 后台计时相关
-            isTaskPaused,
-            activeTaskForBg,
-            formattedTimeForBg,
-            taskProgress
+            clearCache
         };
     }
 }).mount('#app');
