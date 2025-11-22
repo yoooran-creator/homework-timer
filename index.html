@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>写作业计时器 v1.4.1</title> 
+    <title>写作业计时器 v1.5</title> 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
@@ -11,11 +11,15 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Zcool+KuaiLe&display=swap" rel="stylesheet">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+        /* 5. 状态栏匹配优化：将 body 背景设为顶部标题栏的颜色，视觉上匹配 */
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-tap-highlight-color: transparent; background-color: #4f46e5; }
         .fun-font { font-family: 'Zcool KuaiLe', cursive; }
         .safe-bottom { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         
+        /* 6. 解决输入时底部标签栏位移的问题 */
+        .app-footer { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); max-width: 480px; width: 100%; }
+
         /* 动画 */
         @keyframes shake { 0% { transform: rotate(0deg); } 25% { transform: rotate(5deg); } 50% { transform: rotate(0eg); } 75% { transform: rotate(-5deg); } 100% { transform: rotate(0deg); } }
         .shake-box { animation: shake 0.5s infinite; }
@@ -32,7 +36,7 @@
 
 <div id="app" class="h-full flex flex-col max-w-md mx-auto bg-white shadow-2xl relative">
 
-    <input type="hidden" id="appVersion" value="v1.4"> 
+    <input type="hidden" id="appVersion" value="v1.5"> 
     <audio id="cheerAudio" src="https://www.soundjay.com/human/sounds/applause-01.mp3" preload="auto"></audio>
     <audio id="magicAudio" src="https://www.soundjay.com/misc/sounds/magic-chime-01.mp3" preload="auto"></audio>
 
@@ -40,16 +44,13 @@
         
         <div v-if="currentTab === 'tasks'" class="min-h-full pb-10">
             <div class="bg-indigo-600 text-white p-5 rounded-b-[2rem] shadow-lg mb-4 sticky top-0 z-20">
-                <div class="flex justify-between items-start">
+                <div class="flex justify-between items-end">
                     <div class="flex flex-col">
                         <div class="text-indigo-200 text-base font-bold flex items-center mb-1">
                             <span class="text-xl">{{ currentDateDisplay.date }}</span>
                             <span class="text-2xl mx-2 font-light text-indigo-300">|</span>
                             <span class="text-xl">{{ currentDateDisplay.weekday }}</span>
                         </div>
-                        <h1 class="text-lg fun-font mt-1 text-indigo-300 flex items-center">
-                            <span class="mr-2 text-xl">🚀</span> 今天也要加油! 
-                        </h1>
                     </div>
                     <button @click="showShop = true" class="bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/30 active:scale-95 transition shadow-sm self-end mb-[2px]">
                         <span class="text-xl">🎁</span>
@@ -166,7 +167,7 @@
                     </button>
                 </div>
                 <label class="text-xs font-bold text-slate-400 uppercase mb-2 block">作业内容</label>
-                <input v-model="form.content" type="text" placeholder="例如：口算练习" class="w-full bg-slate-50 border-2 border-slate-100 focus:border-indigo-500 rounded-xl px-4 py-3 outline-none mb-5 font-medium">
+                <input v-model="form.content" @keyup.enter="$event.target.blur()" type="text" placeholder="例如：口算练习" class="w-full bg-slate-50 border-2 border-slate-100 focus:border-indigo-500 rounded-xl px-4 py-3 outline-none mb-5 font-medium">
                 <div class="flex justify-between mb-2">
                     <label class="text-xs font-bold text-slate-400 uppercase">预估时长</label>
                     <span class="text-indigo-600 font-bold text-lg">{{ form.estimate }} <span class="text-sm">分钟</span></span>
@@ -318,8 +319,11 @@
                 </div>
             </div>
             
-            <div class="text-center text-xs text-slate-300 font-medium mt-4">
-                <a href="#" @click.prevent="exportHistory" class="hover:underline cursor-pointer">
+            <div class="text-center text-xs text-slate-300 font-medium mt-4 space-y-1">
+                <a href="#" @click.prevent="clearCache" class="hover:underline cursor-pointer">
+                    <span class="mr-1">🧹</span> 清除缓存 (重置所有数据)
+                </a>
+                <a href="#" @click.prevent="exportHistory" class="hover:underline cursor-pointer block">
                     <span class="mr-1">💾</span> 导出学习历史 (.xlsx)
                 </a>
             </div>
@@ -358,7 +362,10 @@
                 </button>
                 <button @click="finishTask" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition">✅ 完成</button>
             </div>
-            <button @click="cancelTimer" class="w-full py-3 text-slate-500 text-sm underline hover:text-slate-300">放弃此任务</button>
+            <div class="flex justify-center gap-6">
+                <button @click="exitFocusMode" class="py-3 text-slate-500 text-sm underline hover:text-slate-300">退出专注模式</button>
+                <button @click="cancelTimer" class="py-3 text-slate-500 text-sm underline hover:text-slate-300">放弃此任务</button>
+            </div>
         </div>
     </div>
 
@@ -440,7 +447,7 @@
         </div>
     </div>
 
-    <div v-if="showToast" class="fixed top-[33%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 text-white px-6 py-3 rounded-full backdrop-blur-sm z-[100] pop-in text-sm font-bold flex items-center gap-2 shadow-2xl">
+    <div v-if="showToast" class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 text-white px-6 py-3 rounded-full backdrop-blur-sm z-[100] pop-in text-sm font-bold flex items-center gap-2 shadow-2xl">
         <span>✅</span> 添加成功!
     </div>
 
@@ -453,7 +460,7 @@
         </div>
     </div>
 
-    <div v-if="!isTimerActive" class="bg-white border-t border-slate-100 flex justify-around pb-safe pt-2 h-20 safe-bottom shadow-[0_-5px_20px_rgba(0,0,0,0.03)] z-30 relative">
+    <div v-if="!isTimerActive" class="bg-white border-t border-slate-100 flex justify-around pb-safe pt-2 h-20 safe-bottom shadow-[0_-5px_20px_rgba(0,0,0,0.03)] z-30 app-footer">
         <button @click="currentTab = 'tasks'" :class="currentTab === 'tasks' ? 'text-indigo-600' : 'text-slate-300'" class="flex flex-col items-center w-1/3 active:scale-95 transition"><span class="text-2xl mb-1">📝</span><span class="text-xs font-bold">作业</span></button>
         <button @click="currentTab = 'create'" :class="currentTab === 'create' ? 'text-indigo-600' : 'text-slate-300'" class="flex flex-col items-center w-1/3 active:scale-95 transition"><span class="text-2xl mb-1">➕</span><span class="text-xs font-bold">添加</span></button>
         <button @click="loadStatsCharts" :class="currentTab === 'stats' ? 'text-indigo-600' : 'text-slate-300'" class="flex flex-col items-center w-1/3 active:scale-95 transition"><span class="text-2xl mb-1">💯</span><span class="text-xs font-bold">成绩</span></button>
@@ -463,7 +470,8 @@
 <script>
 const { createApp, reactive, computed, ref, onMounted, watch, nextTick } = Vue;
 
-const VERSION = document.getElementById('appVersion').value;
+// 8. 版本号变成v1.5
+const VERSION = 'v1.5';
 
 createApp({
     setup() {
@@ -524,14 +532,22 @@ createApp({
             }
         };
 
+        const localStorageKeys = {
+            points: 'hw_v8_pts',
+            fixed: 'hw_v8_fixed',
+            today: 'hw_v8_today',
+            history: 'hw_v8_hist',
+            shop: 'hw_v8_shop'
+        };
+
         onMounted(() => {
             const load = (k, d) => { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }
-            totalPoints.value = parseInt(localStorage.getItem('hw_v8_pts') || 0); 
-            fixedTasks.value = load('hw_v8_fixed', []);
-            history.value = load('hw_v8_hist', []);
-            shopItems.value = load('hw_v8_shop', []); 
+            totalPoints.value = parseInt(localStorage.getItem(localStorageKeys.points) || 0); 
+            fixedTasks.value = load(localStorageKeys.fixed, []);
+            history.value = load(localStorageKeys.history, []);
+            shopItems.value = load(localStorageKeys.shop, []); 
             
-            const savedToday = load('hw_v8_today', { date: '', tasks: [] });
+            const savedToday = load(localStorageKeys.today, { date: '', tasks: [] });
             if(savedToday.date === new Date().toDateString()) todaysTasks.value = savedToday.tasks; else todaysTasks.value = [];
             
             fixedTasks.value.forEach(ft => {
@@ -540,12 +556,28 @@ createApp({
         });
 
         watch([totalPoints, fixedTasks, todaysTasks, history, shopItems], () => {
-            localStorage.setItem('hw_v8_pts', totalPoints.value);
-            localStorage.setItem('hw_v8_fixed', JSON.stringify(fixedTasks.value));
-            localStorage.setItem('hw_v8_today', JSON.stringify({ date: new Date().toDateString(), tasks: todaysTasks.value }));
-            localStorage.setItem('hw_v8_hist', JSON.stringify(history.value));
-            localStorage.setItem('hw_v8_shop', JSON.stringify(shopItems.value));
+            localStorage.setItem(localStorageKeys.points, totalPoints.value);
+            localStorage.setItem(localStorageKeys.fixed, JSON.stringify(fixedTasks.value));
+            localStorage.setItem(localStorageKeys.today, JSON.stringify({ date: new Date().toDateString(), tasks: todaysTasks.value }));
+            localStorage.setItem(localStorageKeys.history, JSON.stringify(history.value));
+            localStorage.setItem(localStorageKeys.shop, JSON.stringify(shopItems.value));
         }, { deep: true });
+
+        // 4. 清除缓存功能
+        const clearCache = () => {
+            if (confirm("⚠️ 确认清除所有学习数据和设置吗？此操作不可逆！")) {
+                Object.values(localStorageKeys).forEach(key => localStorage.removeItem(key));
+                // 重置 Vue 状态
+                totalPoints.value = 0;
+                fixedTasks.value = [];
+                todaysTasks.value = [];
+                history.value = [];
+                shopItems.value = [];
+                alert("缓存已清除，数据已重置。");
+                currentTab.value = 'tasks'; // 切换到首页
+            }
+        };
+
 
         const buildDisplay = (sourceList, isFixedSource) => {
             const todayStr = new Date().toDateString();
@@ -695,6 +727,11 @@ createApp({
                 todaysTasks.value.push({ ...task, isCompleted: false });
             }
             form.content = ''; showToast.value = true; setTimeout(() => showToast.value = false, 2000);
+            
+            // 7. 确保输入完成后输入法面板消失
+            if(document.activeElement && document.activeElement.tagName === 'INPUT') {
+                document.activeElement.blur();
+            }
         };
         const deleteFixedTask = (idx) => {
             const taskId = fixedTasks.value[idx].id;
@@ -737,6 +774,14 @@ createApp({
         const togglePause = () => { isPaused.value = !isPaused.value; if (isPaused.value) pauseStartTime = Date.now(); else totalPauseDuration += (Date.now() - pauseStartTime); };
         const cancelTimer = () => { if(confirm("放弃?")) { clearInterval(timerInt); isTimerActive.value=false; } };
         
+        // 3. 退出专注模式功能
+        const exitFocusMode = () => {
+             if(confirm("退出专注模式后计时将停止，但任务状态不会更新。确认退出吗？")) {
+                clearInterval(timerInt);
+                isTimerActive.value = false;
+             }
+        };
+
         const finishTask = () => {
             clearInterval(timerInt);
             if(isPaused.value) totalPauseDuration += (Date.now() - pauseStartTime);
@@ -849,13 +894,15 @@ createApp({
             statsToday, currentMonthStats, calendarOffset,
             currentMonthDisplay, changeMonth, canGoBackMonth, canGoForwardMonth,
             addNewTask, deleteFixedTask, openEditModal, saveFixedEdit, buyItem, openBox, resetShop, addCustomItem,
-            startTimer, togglePause, finishTask, cancelTimer, loadStatsCharts, closeReward,
+            startTimer, togglePause, finishTask, cancelTimer, exitFocusMode, loadStatsCharts, closeReward, // 导出 exitFocusMode
             getSubjectBadgeColor, getSubjectColor, getDiffClass, getDiffText, getTaskStats, formatDuration, formatDiff,
             
             expandedTasks,
             toggleExpansion,
             // 导出功能
-            exportHistory 
+            exportHistory,
+            // 导出清除缓存功能
+            clearCache
         };
     }
 }).mount('#app');
