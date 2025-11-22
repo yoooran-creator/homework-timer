@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>写作业计时器 v1.4.1</title> 
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Zcool+KuaiLe&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+        .fun-font { font-family: 'Zcool KuaiLe', cursive; }
+        .safe-bottom { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        
+        /* 动画 */
+        @keyframes shake { 0% { transform: rotate(0deg); } 25% { transform: rotate(5deg); } 50% { transform: rotate(0eg); } 75% { transform: rotate(-5deg); } 100% { transform: rotate(0deg); } }
+        .shake-box { animation: shake 0.5s infinite; }
+        @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .pop-in { animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+        
+        /* 折叠动画 */
+        .collapse-enter-active, .collapse-leave-active { transition: all 0.3s ease-in-out; max-height: 500px; opacity: 1; }
+        .collapse-enter-from, .collapse-leave-to { max-height: 0; opacity: 0; }
+        .rotate-180 { transform: rotate(180deg); }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 select-none h-screen overflow-hidden">
+
+<div id="app" class="h-full flex flex-col max-w-md mx-auto bg-white shadow-2xl relative">
+
+    <input type="hidden" id="appVersion" value="v1.4"> 
+    <audio id="cheerAudio" src="https://www.soundjay.com/human/sounds/applause-01.mp3" preload="auto"></audio>
+    <audio id="magicAudio" src="https://www.soundjay.com/misc/sounds/magic-chime-01.mp3" preload="auto"></audio>
+
+    <div class="flex-1 overflow-y-auto no-scrollbar bg-slate-50" :class="{'safe-bottom': currentTab !== 'timer'}">
+        
+        <div v-if="currentTab === 'tasks'" class="min-h-full pb-10">
+            <div class="bg-indigo-600 text-white p-5 rounded-b-[2rem] shadow-lg mb-4 sticky top-0 z-20">
+                <div class="flex justify-between items-start">
+                    <div class="flex flex-col">
+                        <div class="text-indigo-200 text-base font-bold flex items-center mb-1">
+                            <span class="text-xl">{{ currentDateDisplay.date }}</span>
+                            <span class="text-2xl mx-2 font-light text-indigo-300">|</span>
+                            <span class="text-xl">{{ currentDateDisplay.weekday }}</span>
+                        </div>
+                        <h1 class="text-lg fun-font mt-1 text-indigo-300 flex items-center">
+                            <span class="mr-2 text-xl">🚀</span> 今天也要加油! 
+                        </h1>
+                    </div>
+                    <button @click="showShop = true" class="bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/30 active:scale-95 transition shadow-sm self-end mb-[2px]">
+                        <span class="text-xl">🎁</span>
+                        <span class="font-bold text-yellow-300 text-xl">{{ totalPoints }}</span>
+                    </button>
+                </div>
+                <div class="mt-4 flex justify-between items-center text-sm font-medium border-t border-white/20 pt-3">
+                    <div class="flex flex-col items-center flex-1 text-center border-r border-white/20">
+                        <span class="text-indigo-200 text-xs">预估耗时:</span>
+                        <span class="text-white font-bold text-lg">{{ formatDuration(statsToday.totalEstimateDuration, true) }}</span>
+                    </div>
+                    <div class="flex flex-col items-center flex-1 text-center border-r border-white/20">
+                        <span class="text-indigo-200 text-xs">实际耗时:</span>
+                        <span class="text-white font-bold text-lg">{{ formatDuration(statsToday.totalActualDuration, true) }}</span>
+                    </div>
+                    <div class="flex flex-col items-center flex-1 text-center">
+                        <span class="text-indigo-200 text-xs">进度:</span>
+                        <span class="text-white font-bold text-lg">{{ statsToday.successCount }}/{{ statsToday.count }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="px-4 space-y-6">
+                <div v-if="fixedTasks.length > 0">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">📌 每日必做</h3>
+                    
+                    <div class="space-y-3">
+                        <div v-for="task in fixedTasksDisplay" :key="task.uiId" 
+                             class="bg-white rounded-xl shadow-sm border border-slate-100 relative overflow-hidden transition-all flex h-20"
+                             :class="task.isCompleted ? 'bg-slate-50' : ''">
+                            
+                            <div class="flex flex-1 transition-all" :class="task.isCompleted ? 'opacity-40 grayscale' : ''">
+                                <div class="w-1.5 h-full flex-shrink-0" :class="getSubjectColor(task.subject, true)"></div>
+                                
+                                <div class="flex-1 flex flex-col justify-center px-3 min-w-0" 
+                                     :class="{ 'cursor-pointer': !task.isCompleted }"
+                                     @click="!task.isCompleted && startTimer(task)">
+                                    <div class="font-bold text-slate-700 text-base truncate mb-1 flex items-center gap-2">
+                                        <span class="text-[9px] text-white px-1.5 py-[1px] rounded flex-shrink-0 leading-tight" :class="getSubjectBadgeColor(task.subject)">{{ task.subject }}</span>
+                                        <span class="truncate" :class="{'line-through text-slate-400': task.isCompleted}">{{ task.content }}</span>
+                                    </div>
+
+                                    <div class="text-xs flex items-center text-slate-400">
+                                        <span class="flex items-center gap-1">⏱️ 预:{{ task.estimate }}分</span>
+                                        
+                                        <template v-if="task.isCompleted">
+                                            <span class="font-bold text-indigo-500 ml-4 flex items-center gap-1">⏰ 实:{{ formatDuration(task.actualDuration) }}</span>
+                                            <span :class="getDiffClass(task)" class="font-bold px-1 rounded ml-4">{{ getDiffText(task) }}</span>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="w-16 flex items-center justify-center border-l border-slate-50 flex-shrink-0 bg-white/50">
+                                <button v-if="!task.isCompleted" @click="startTimer(task)" class="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-sm active:scale-95 transition">▶</button>
+                                <div v-else class="text-3xl pop-in drop-shadow-sm">{{ task.actualDuration <= task.estimate*60 ? '🏅' : '🐢' }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                 <div v-else class="text-center py-8 border-2 border-dashed border-slate-200 rounded-2xl bg-white">
+                    <div class="text-3xl mb-2">🥳</div>
+                    <div class="text-slate-400 text-sm">点击底部 ➕ 添加你的第一个每日必做任务</div>
+                </div>
+
+                <div>
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">📝 今日作业</h3>
+                    <div v-if="todaysTasksDisplay.length === 0" class="text-center py-8 border-2 border-dashed border-slate-200 rounded-2xl bg-white">
+                        <div class="text-3xl mb-2">🍃</div>
+                        <div class="text-slate-400 text-sm">点击底部 ➕ 添加作业</div>
+                    </div>
+                    <div class="space-y-3">
+                        <div v-for="task in todaysTasksDisplay" :key="task.uiId" 
+                             class="bg-white rounded-xl shadow-sm border border-slate-100 relative overflow-hidden transition-all flex h-20"
+                             :class="task.isCompleted ? 'bg-slate-50' : ''">
+                            
+                            <div class="flex flex-1 transition-all" :class="task.isCompleted ? 'opacity-40 grayscale' : ''">
+                                <div class="w-1.5 h-full flex-shrink-0" :class="getSubjectColor(task.subject, true)"></div>
+                                <div class="flex-1 flex flex-col justify-center px-3 min-w-0" @click="!task.isCompleted && startTimer(task)">
+                                    <div class="font-bold text-slate-700 text-base truncate mb-1 flex items-center gap-2">
+                                        <span class="text-[9px] text-white px-1.5 py-[1px] rounded flex-shrink-0 leading-tight" :class="getSubjectBadgeColor(task.subject)">{{ task.subject }}</span>
+                                        <span class="truncate" :class="{'line-through text-slate-400': task.isCompleted}">{{ task.content }}</span>
+                                    </div>
+                                    
+                                    <div class="text-xs flex items-center text-slate-400">
+                                        <span class="flex items-center gap-1">⏱️ 预:{{ task.estimate }}分</span>
+
+                                        <template v-if="task.isCompleted">
+                                            <span class="font-bold text-indigo-500 ml-4 flex items-center gap-1">⏰ 实:{{ formatDuration(task.actualDuration) }}</span>
+                                            <span :class="getDiffClass(task)" class="font-bold px-1 rounded ml-4">{{ getDiffText(task) }}</span>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="w-16 flex items-center justify-center border-l border-slate-50 flex-shrink-0 bg-white/50">
+                                <button v-if="!task.isCompleted" @click="startTimer(task)" class="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg shadow-sm active:scale-95 transition">▶</button>
+                                <div v-else class="text-3xl pop-in drop-shadow-sm">{{ task.actualDuration <= task.estimate*60 ? '🏅' : '🐢' }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="currentTab === 'create'" class="p-5">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6 fun-font">添加任务</h2>
+            <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-8">
+                <label class="text-xs font-bold text-slate-400 uppercase mb-3 block">选择科目</label>
+                <div class="grid grid-cols-3 gap-2 mb-5">
+                    <button v-for="sub in subjects" :key="sub" @click="form.subject = sub"
+                            class="py-2.5 rounded-xl font-bold text-xs border-2 transition-all"
+                            :class="form.subject === sub ? getSubjectBadgeColor(sub) + ' text-white border-transparent shadow-md' : 'bg-slate-50 text-slate-500 border-transparent'">
+                        {{ sub }}
+                    </button>
+                </div>
+                <label class="text-xs font-bold text-slate-400 uppercase mb-2 block">作业内容</label>
+                <input v-model="form.content" type="text" placeholder="例如：口算练习" class="w-full bg-slate-50 border-2 border-slate-100 focus:border-indigo-500 rounded-xl px-4 py-3 outline-none mb-5 font-medium">
+                <div class="flex justify-between mb-2">
+                    <label class="text-xs font-bold text-slate-400 uppercase">预估时长</label>
+                    <span class="text-indigo-600 font-bold text-lg">{{ form.estimate }} <span class="text-sm">分钟</span></span>
+                </div>
+                <input type="range" v-model.number="form.estimate" min="3" max="35" step="0.5" class="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 mb-6">
+                <div class="flex items-center justify-between mb-6 bg-orange-50 p-3 rounded-xl border border-orange-100">
+                    <div class="flex flex-col">
+                        <span class="font-bold text-orange-800 text-sm">设为每日固定任务?</span>
+                        <span class="text-xs text-orange-600">每天自动刷新</span>
+                    </div>
+                    <div @click="form.isFixed = !form.isFixed" class="w-12 h-7 rounded-full relative transition-colors cursor-pointer" :class="form.isFixed ? 'bg-orange-400' : 'bg-slate-300'">
+                        <div class="w-5 h-5 bg-white rounded-full absolute top-1 transition-all shadow-sm" :class="form.isFixed ? 'left-6' : 'left-1'"></div>
+                    </div>
+                </div>
+                <button @click="addNewTask" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition">✨ 添加任务</button>
+            </div>
+            
+            <div v-if="fixedTasks.length > 0" class="mt-8">
+                <h3 class="text-sm font-bold text-slate-400 uppercase mb-3">管理每日固定任务</h3>
+                <div class="space-y-2 pb-20">
+                    <div v-for="(task, idx) in fixedTasks" :key="task.id" class="bg-white p-3 rounded-xl border border-slate-100 flex justify-between items-center">
+                        <div class="flex items-center gap-2 overflow-hidden">
+                            <span class="text-xs text-white px-2 py-0.5 rounded flex-shrink-0" :class="getSubjectBadgeColor(task.subject)">{{ task.subject }}</span>
+                            <span class="font-bold text-sm truncate">{{ task.content }}</span>
+                        </div>
+                        <div class="flex gap-2 flex-shrink-0">
+                            <button @click="openEditModal(task)" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg font-bold">修改</button>
+                            <button @click="deleteFixedTask(idx)" class="text-xs bg-red-50 text-red-400 px-3 py-1.5 rounded-lg font-bold">删除</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="currentTab === 'stats'" class="p-4">
+            <h2 class="text-2xl font-bold text-slate-800 mb-4 fun-font">学习成绩单</h2>
+            
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-5 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-1/3 h-full z-0 overflow-hidden opacity-30">
+                    
+                    <svg v-if="statsToday.efficiencyDiff >= 0" 
+                         class="w-full h-full transform translate-x-1/4 -translate-y-[5%] scale-[2.5]" 
+                         :class="statsToday.efficiencyDiff === 0 ? 'text-slate-200' : 'text-green-300'" 
+                         fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M12 19V5m-4 4l4-4 4 4" />
+                    </svg>
+                    
+                    <svg v-else 
+                         class="w-full h-full transform translate-x-1/4 -translate-y-[5%] scale-[2.5] rotate-180" 
+                         :class="'text-red-300'" 
+                         fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M12 19V5m-4 4l4-4 4 4" />
+                    </svg>
+                </div>
+
+                <h3 class="font-bold text-slate-700 mb-3 flex items-center gap-2 relative z-10">💡 今日状态</h3>
+                <div class="grid grid-cols-3 gap-4 mb-3 relative z-10">
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1">效率差 (预-实)</div>
+                        <div class="text-lg font-bold" :class="statsToday.efficiencyDiff >= 0 ? 'text-green-600' : 'text-red-600'">
+                            {{ statsToday.efficiencyDiff === 0 ? '00:00' : formatDiff(statsToday.efficiencyDiff) }}
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1">任务数</div>
+                        <div class="text-lg font-bold text-slate-700">{{ statsToday.count }}<span class="text-xs">个</span></div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1">达标率</div>
+                        <div class="text-lg font-bold" :class="statsToday.rate >= 80 ? 'text-green-500' : 'text-orange-500'">{{ statsToday.rate }}%</div>
+                    </div>
+                </div>
+            </div>
+            
+            <h3 class="font-bold text-slate-700 mb-3 flex items-center gap-2">🗓️ 近期概况</h3>
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-5">
+                
+                <div class="flex justify-between items-center mb-4">
+                    <button @click="changeMonth(-1)" :disabled="!canGoBackMonth" class="text-indigo-500 disabled:text-slate-300 font-bold active:scale-95 transition">❮</button>
+                    <span class="font-bold text-lg text-slate-800">{{ currentMonthDisplay }}</span>
+                    <button @click="changeMonth(1)" :disabled="!canGoForwardMonth" class="text-indigo-500 disabled:text-slate-300 font-bold active:scale-95 transition">❯</button>
+                </div>
+
+                <div class="grid grid-cols-7 gap-2 mb-2 text-center">
+                     <div v-for="h in ['一','二','三','四','五','六','日']" :key="h" class="text-xs text-slate-300 font-bold">{{ h }}</div>
+                </div>
+                <div class="grid grid-cols-7 gap-2">
+                    <div v-for="n in calendarOffset" :key="'ph-'+n" class="aspect-square"></div>
+                    <div v-for="(day, idx) in currentMonthStats" :key="idx" 
+                         class="aspect-square rounded-xl flex flex-col items-center justify-center relative overflow-hidden transition-all border-2"
+                         :class="day.count > 0 ? (day.diff <= 0 ? 'bg-green-100 border-green-200' : 'bg-orange-100 border-orange-200') : 'bg-slate-50 border-slate-100 opacity-50'">
+                        
+                        <div class="text-[9px] font-bold mb-0.5" :class="day.count > 0 ? 'text-slate-600' : 'text-slate-300'">{{ day.dateDisplay }}</div>
+                        
+                        <div v-if="day.count > 0" class="text-[9px] font-bold leading-none scale-90" 
+                             :class="day.diff <= 0 ? 'text-green-700' : 'text-orange-700'">
+                             {{ formatDiff(day.diff) }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="font-bold text-slate-700 mb-4 flex items-center gap-2">🎯 单项任务追踪</h3>
+            <div class="space-y-6 pb-20">
+                <div v-if="fixedTasks.length === 0" class="text-center py-10 text-slate-400 text-sm">
+                    <div class="text-4xl mb-2">📊</div>
+                    <div>您还没有添加固定任务，无法进行单项追踪。</div>
+                </div>
+                <div v-for="ft in fixedTasks" :key="ft.id" class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <div class="flex justify-between items-center cursor-pointer" @click="toggleExpansion(ft.id)">
+                        <div class="flex items-center gap-3 overflow-hidden">
+                            <span class="text-[10px] text-slate-500 px-2 py-0.5 rounded flex-shrink-0 font-medium border border-slate-200 bg-slate-50">{{ ft.subject }}</span>
+                            <div class="font-bold text-lg text-slate-800 truncate">{{ ft.content }}</div>
+                        </div>
+                        <span class="text-xl text-indigo-500 transition-transform duration-300 flex-shrink-0" :class="{'rotate-180': expandedTasks[ft.id]}">
+                            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </span>
+                    </div>
+
+                    <Transition name="collapse">
+                        <div v-show="expandedTasks[ft.id]" class="mt-3 pt-3 border-t border-slate-100">
+                            <div class="text-xs text-slate-400 mb-3">计划预估: <span class="font-bold text-slate-600">{{ ft.estimate }} 分钟</span></div>
+                            
+                            <div class="grid grid-cols-4 gap-2 mb-4">
+                                <div class="bg-indigo-50 rounded-lg p-1.5 text-center">
+                                    <div class="text-[9px] text-indigo-400">平均</div>
+                                    <div class="font-bold text-indigo-600 text-[10px]">{{ getTaskStats(ft.id).avg }}</div>
+                                </div>
+                                <div class="bg-green-50 rounded-lg p-1.5 text-center">
+                                    <div class="text-[9px] text-green-400">最快</div>
+                                    <div class="font-bold text-green-600 text-[10px]">{{ getTaskStats(ft.id).min }}</div>
+                                </div>
+                                <div class="bg-red-50 rounded-lg p-1.5 text-center">
+                                    <div class="text-[9px] text-red-400">最慢</div>
+                                    <div class="font-bold text-red-600 text-[10px]">{{ getTaskStats(ft.id).max }}</div>
+                                </div>
+                                <div class="bg-orange-50 rounded-lg p-1.5 text-center">
+                                    <div class="text-[9px] text-orange-400">达标</div>
+                                    <div class="font-bold text-orange-600 text-[10px]">{{ getTaskStats(ft.id).successCount }}次</div>
+                                </div>
+                            </div>
+                            <div class="h-32 w-full">
+                                <canvas :id="'chart-'+ft.id"></canvas>
+                            </div>
+                        </div>
+                    </Transition>
+                </div>
+            </div>
+            
+            <div class="text-center text-xs text-slate-300 font-medium mt-4">
+                <a href="#" @click.prevent="exportHistory" class="hover:underline cursor-pointer">
+                    <span class="mr-1">💾</span> 导出学习历史 (.xlsx)
+                </a>
+            </div>
+            
+            <div class="text-center text-xs text-slate-300 font-medium pb-2 safe-bottom mt-1">
+                当前版本: {{ appVersion }}
+            </div>
+        </div>
+    </div>
+
+    <div v-if="isTimerActive" class="fixed inset-0 z-50 bg-slate-900 text-white flex flex-col items-center justify-center p-6">
+        <div class="text-center mb-10">
+            <span class="px-3 py-1 rounded-full bg-slate-800 text-slate-400 text-xs border border-slate-700">{{ activeTask.subject }}</span>
+            <h2 class="text-4xl font-bold mt-4">{{ activeTask.content }}</h2>
+        </div>
+        <div class="relative w-72 h-72 mb-12 flex items-center justify-center">
+            <svg class="absolute w-full h-full transform -rotate-90">
+                <circle cx="144" cy="144" r="135" stroke="#1e293b" stroke-width="12" fill="none"></circle>
+                <circle cx="144" cy="144" r="135" :stroke="timerColor" stroke-width="12" fill="none"
+                        stroke-dasharray="848" :stroke-dashoffset="progressOffset" stroke-linecap="round"
+                        class="transition-all duration-500 ease-linear" :class="{'opacity-50': isOvertime}"></circle>
+            </svg>
+            <div class="flex flex-col items-center absolute z-10">
+                <div class="text-7xl font-mono font-bold tabular-nums tracking-tighter" :class="isOvertime ? 'text-red-500 animate-pulse' : 'text-white'">
+                    {{ isOvertime ? '+' : '' }}{{ formattedTime }}
+                </div>
+                <div v-if="isPaused" class="text-yellow-400 font-bold text-lg mt-2">⏸ 已暂停</div>
+                <div v-if="isOvertime" class="text-red-400 text-sm font-bold mt-2">已超时</div>
+            </div>
+        </div>
+        <div class="w-full max-w-xs space-y-4">
+            <div class="flex gap-4">
+                <button @click="togglePause" class="flex-1 py-4 rounded-2xl font-bold text-lg transition active:scale-95 flex items-center justify-center gap-2"
+                        :class="isPaused ? 'bg-green-500 text-white shadow-lg' : 'bg-yellow-500 text-white shadow-lg'">
+                    {{ isPaused ? '▶ 继续' : '⏸ 暂停' }}
+                </button>
+                <button @click="finishTask" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition">✅ 完成</button>
+            </div>
+            <button @click="cancelTimer" class="w-full py-3 text-slate-500 text-sm underline hover:text-slate-300">放弃此任务</button>
+        </div>
+    </div>
+
+    <div v-if="reward.show" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-6">
+        <div class="bg-white rounded-3xl p-6 text-center w-full max-w-sm shadow-2xl pop-in relative"> 
+            <div class="relative z-10">
+                <div class="text-7xl -mt-10 mb-4 shadow-md rounded-full bg-white w-24 h-24 mx-auto flex items-center justify-center border-4 border-indigo-50">
+                    {{ reward.emoji }}
+                </div>
+                <h2 class="text-2xl fun-font font-bold text-slate-800 mb-1">{{ reward.title }}</h2>
+                <p class="text-slate-500 mb-6 text-sm">{{ reward.message }}</p>
+                <div class="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100">
+                    <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-200">
+                        <span class="text-xs text-slate-400">计划耗时</span>
+                        <span class="font-bold text-slate-700">{{ reward.estimate }} 分钟</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-slate-400">实际耗时</span>
+                        <span class="font-bold text-2xl" :class="reward.isSuccess ? 'text-green-600' : 'text-orange-500'">{{ formatDuration(reward.actual) }}</span>
+                    </div>
+                    <div class="mt-2 text-xs font-bold py-1 px-2 rounded inline-block" :class="reward.diff <= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
+                        {{ reward.diff <= 0 ? '🚀 快了 ' + formatDuration(Math.abs(reward.diff)) : '🐢 慢了 ' + formatDuration(reward.diff) }}
+                    </div>
+                </div>
+                <button @click="closeReward" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition">收下奖励 (+{{reward.points}}分)</button>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="showShop" class="fixed inset-0 z-40 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="relative z-10 w-full max-w-sm h-[650px] flex flex-col bg-white rounded-3xl overflow-hidden shadow-2xl">
+            <div class="bg-indigo-600 p-4 text-white flex justify-between items-center shadow-lg">
+                <h2 class="font-bold text-xl fun-font">🎁 礼物兑换</h2>
+                <button @click="showShop=false" class="text-2xl opacity-80 hover:opacity-100">&times;</button>
+            </div>
+            <div class="bg-indigo-50 p-4 text-center border-b border-indigo-100">
+                <span class="text-xs text-indigo-500 uppercase tracking-wide">我的积分</span>
+                <div class="text-4xl font-bold text-yellow-500 flex justify-center items-center gap-2 mt-1 drop-shadow-sm"><span>🪙</span> {{ totalPoints }}</div>
+            </div>
+            <div v-if="!shopState.revealed" class="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-3 content-start bg-slate-50">
+                <div @click="showAddItemMode=true" class="bg-indigo-50 border-2 border-dashed border-indigo-200 rounded-xl p-3 flex flex-col items-center justify-center text-center cursor-pointer min-h-[110px] active:scale-95 transition text-indigo-500">
+                    <span class="text-2xl mb-1">➕</span><span class="text-xs font-bold">自定义心愿</span>
+                </div>
+                <div v-for="item in shopItems" :key="item.name" @click="buyItem(item)" class="bg-white border-2 border-slate-100 rounded-xl p-3 flex flex-col items-center text-center active:scale-95 transition cursor-pointer relative overflow-hidden shadow-sm hover:border-indigo-400">
+                    <div class="text-5xl mb-2">{{ item.emoji }}</div>
+                    <div class="font-bold text-sm text-slate-700 leading-tight mb-2 h-8 flex items-center justify-center">{{ item.name }}</div>
+                    <div class="text-xs font-bold text-white bg-indigo-500 px-3 py-1 rounded-full shadow-md">{{ item.price }} 积分</div>
+                    <div v-if="totalPoints < item.price" class="absolute inset-0 bg-slate-100/80 flex items-center justify-center font-bold text-slate-400 text-xs backdrop-blur-[1px]">积分不足</div>
+                </div>
+                <div v-if="shopItems.length === 0" class="col-span-2 text-center py-10 text-slate-400 text-sm">
+                    <div class="text-4xl mb-2">🎈</div>
+                    <div>暂时还没有心愿哦！点击上方“自定义心愿”添加吧。</div>
+                </div>
+            </div>
+            <div v-else class="flex-1 flex flex-col items-center justify-center bg-indigo-900 relative overflow-hidden">
+                <div v-if="!shopState.opened" @click="openBox" class="cursor-pointer shake-box relative z-20">
+                    <div class="text-[8rem] drop-shadow-2xl">🎁</div>
+                    <div class="text-white font-bold mt-8 text-center animate-pulse text-lg">点击开启惊喜!</div>
+                </div>
+                <div v-else class="text-center z-20 pop-in px-6">
+                    <div class="text-[8rem] mb-6 drop-shadow-2xl">{{ shopState.reward.emoji }}</div>
+                    <h3 class="text-3xl font-bold text-white fun-font mb-3">兑换成功!</h3>
+                    <div class="bg-white/90 backdrop-blur text-indigo-900 font-bold px-8 py-4 rounded-2xl shadow-2xl text-xl mb-8 border-4 border-yellow-300">{{ shopState.reward.name }}</div>
+                    <button @click="resetShop" class="text-white/80 underline text-sm hover:text-white">返回商城</button>
+                </div>
+            </div>
+            <div v-if="showAddItemMode" class="absolute inset-0 bg-white z-50 p-6 flex flex-col pop-in">
+                <h3 class="font-bold text-lg mb-4">添加心愿</h3>
+                <input v-model="newItem.name" placeholder="名称" class="mb-3 p-3 border rounded-xl bg-slate-50 font-bold">
+                <input v-model.number="newItem.price" type="number" placeholder="积分" class="mb-3 p-3 border rounded-xl bg-slate-50 font-bold">
+                <div class="flex-1 overflow-y-auto grid grid-cols-5 gap-2 mb-4 content-start mt-5 px-2 pt-2">
+                    <button v-for="icon in iconPack" :key="icon" @click="newItem.emoji = icon" class="text-2xl p-2 rounded-lg hover:bg-slate-100 transition" :class="newItem.emoji===icon ? 'bg-indigo-100 ring-2 ring-indigo-500' : ''">{{ icon }}</button>
+                </div>
+                <div class="flex gap-3 mt-auto">
+                    <button @click="addCustomItem" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold">确认</button>
+                    <button @click="showAddItemMode=false" class="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl font-bold">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="showToast" class="fixed top-[33%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 text-white px-6 py-3 rounded-full backdrop-blur-sm z-[100] pop-in text-sm font-bold flex items-center gap-2 shadow-2xl">
+        <span>✅</span> 添加成功!
+    </div>
+
+    <div v-if="editModal.show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl pop-in">
+            <h3 class="font-bold text-lg mb-4 text-center">修改固定任务</h3>
+            <input v-model="editModal.data.content" class="w-full p-2 border border-slate-200 rounded-lg font-bold text-slate-700 mb-4">
+            <div class="mb-6"><label class="text-xs text-slate-400 block mb-1">预估时长: <span class="text-indigo-600 font-bold">{{editModal.data.estimate}}分钟</span></label><input type="range" v-model.number="editModal.data.estimate" min="3" max="35" step="0.5" class="w-full accent-indigo-600"></div>
+            <div class="flex gap-3"><button @click="saveFixedEdit" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold">保存</button><button @click="editModal.show=false" class="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold">取消</button></div>
+        </div>
+    </div>
+
+    <div v-if="!isTimerActive" class="bg-white border-t border-slate-100 flex justify-around pb-safe pt-2 h-20 safe-bottom shadow-[0_-5px_20px_rgba(0,0,0,0.03)] z-30 relative">
+        <button @click="currentTab = 'tasks'" :class="currentTab === 'tasks' ? 'text-indigo-600' : 'text-slate-300'" class="flex flex-col items-center w-1/3 active:scale-95 transition"><span class="text-2xl mb-1">📝</span><span class="text-xs font-bold">作业</span></button>
+        <button @click="currentTab = 'create'" :class="currentTab === 'create' ? 'text-indigo-600' : 'text-slate-300'" class="flex flex-col items-center w-1/3 active:scale-95 transition"><span class="text-2xl mb-1">➕</span><span class="text-xs font-bold">添加</span></button>
+        <button @click="loadStatsCharts" :class="currentTab === 'stats' ? 'text-indigo-600' : 'text-slate-300'" class="flex flex-col items-center w-1/3 active:scale-95 transition"><span class="text-2xl mb-1">💯</span><span class="text-xs font-bold">成绩</span></button>
+    </div>
+</div>
+
+<script>
+const { createApp, reactive, computed, ref, onMounted, watch, nextTick } = Vue;
+
+const VERSION = document.getElementById('appVersion').value;
+
+createApp({
+    setup() {
+        const successEmojis = ['🏆', '🥇', '👑', '🚀', '🏅', '✨'];
+        
+        const subjects = ['语文', '数学', '其他'];
+        
+        const currentTab = ref('tasks');
+        const showShop = ref(false);
+        const showToast = ref(false);
+        const iconPack = ['📺', '🧹', '🎮','🎡','🎨','🧸','⚽','🍔','🍟','🍦','🍪','🍫','🐱','🐶','🦄','🚀','⭐','🎸','🎲','🎧','🚲','🏝️'];
+        const today = new Date();
+        const currentDateDisplay = computed(() => ({
+            date: today.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }),
+            weekday: today.toLocaleDateString('zh-CN', { weekday: 'long' })
+        }));
+        
+        const totalPoints = ref(0); 
+        const fixedTasks = ref([]);
+        const todaysTasks = ref([]); 
+        const history = ref([]);
+        const shopItems = ref([]); 
+        
+        const form = reactive({ subject: '语文', content: '', estimate: 15, isFixed: false });
+        
+        const editModal = reactive({ show: false, data: {} });
+        const shopState = reactive({ revealed: false, opened: false, reward: null });
+        const showAddItemMode = ref(false);
+        const newItem = reactive({ name: '', price: 100, emoji: '🎮' });
+        const reward = reactive({ show: false, title: '', message: '', emoji: '', points: 0, actual: 0, estimate: 0, diff: 0, isSuccess: false });
+        
+        const appVersion = ref(VERSION);
+        const currentMonth = ref(new Date()); 
+        const maxMonth = new Date(); 
+        const minMonth = computed(() => { 
+            const d = new Date(maxMonth);
+            d.setMonth(d.getMonth() - 5);
+            return d;
+        });
+
+        const isTimerActive = ref(false);
+        const isPaused = ref(false);
+        const activeTask = ref(null);
+        const elapsedTime = ref(0);
+        const totalEstimateSec = ref(0);
+        let timerInt = null;
+        let startTimeStamp = 0;
+        let pauseStartTime = 0;
+        let totalPauseDuration = 0;
+
+        const expandedTasks = reactive({});
+        const toggleExpansion = (taskId) => {
+            expandedTasks[taskId] = !expandedTasks[taskId];
+            if (expandedTasks[taskId]) {
+                nextTick(() => {
+                    loadChartForTask(taskId);
+                });
+            }
+        };
+
+        onMounted(() => {
+            const load = (k, d) => { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }
+            totalPoints.value = parseInt(localStorage.getItem('hw_v8_pts') || 0); 
+            fixedTasks.value = load('hw_v8_fixed', []);
+            history.value = load('hw_v8_hist', []);
+            shopItems.value = load('hw_v8_shop', []); 
+            
+            const savedToday = load('hw_v8_today', { date: '', tasks: [] });
+            if(savedToday.date === new Date().toDateString()) todaysTasks.value = savedToday.tasks; else todaysTasks.value = [];
+            
+            fixedTasks.value.forEach(ft => {
+                expandedTasks[ft.id] = false;
+            });
+        });
+
+        watch([totalPoints, fixedTasks, todaysTasks, history, shopItems], () => {
+            localStorage.setItem('hw_v8_pts', totalPoints.value);
+            localStorage.setItem('hw_v8_fixed', JSON.stringify(fixedTasks.value));
+            localStorage.setItem('hw_v8_today', JSON.stringify({ date: new Date().toDateString(), tasks: todaysTasks.value }));
+            localStorage.setItem('hw_v8_hist', JSON.stringify(history.value));
+            localStorage.setItem('hw_v8_shop', JSON.stringify(shopItems.value));
+        }, { deep: true });
+
+        const buildDisplay = (sourceList, isFixedSource) => {
+            const todayStr = new Date().toDateString();
+            return sourceList.map(t => {
+                let done = null;
+                if(isFixedSource) {
+                    done = history.value.find(h => h.isFixed && h.fixedTemplateId === t.id && new Date(h.timestamp).toDateString() === todayStr);
+                } else {
+                    // 当日任务的完成状态直接记录在 todaysTasks 中
+                    done = t.isCompleted ? t : null;
+                }
+                
+                return { uiId: (isFixedSource ? 'fix' : 'tmp') + t.id, ...t, isCompleted: !!done, actualDuration: done ? done.actualDuration : 0 };
+            });
+        };
+        const fixedTasksDisplay = computed(() => buildDisplay(fixedTasks.value, true));
+        const todaysTasksDisplay = computed(() => buildDisplay(todaysTasks.value, false));
+        
+        // 格式化秒数为 XX分YY秒，或仅 HH:MM:SS (如果 isShort 为 true)
+        const formatDuration = (s, isShort = false) => {
+            if(isShort) {
+                const totalMinutes = Math.floor(s/60);
+                const ss = (s%60).toString().padStart(2,'0');
+                return `${totalMinutes.toString().padStart(2,'0')}:${ss}`;
+            }
+            const m = Math.floor(s/60); const ss = s%60;
+            if(m>0) return `${m}分${ss}秒`; return `${ss}秒`;
+        };
+        // 格式化时间差: +MM:SS 或 -MM:SS
+        const formatDiff = (s) => {
+            const abs = Math.abs(s);
+            const m = Math.floor(abs/60).toString().padStart(2,'0');
+            const ss = (abs%60).toString().padStart(2,'0');
+            // efficiencyDiff = 预估 - 实际 (正数表示快, 负数表示慢)
+            return (s >= 0 ? '+' : '-') + `${m}:${ss}`;
+        };
+
+        const statsToday = computed(() => {
+            const todayStr = new Date().toDateString();
+            
+            // 找到今天所有已完成任务的记录
+            const doneToday = history.value.filter(h => new Date(h.timestamp).toDateString() === todayStr);
+            
+            // 找出今天所有任务 (固定任务 + 当日添加任务)
+            const allTodayTasks = [...fixedTasks.value.map(t => ({...t, isFixed: true})), ...todaysTasks.value.map(t => ({...t, isFixed: false}))];
+            const totalCount = allTodayTasks.length; // 总任务数 (包括未完成的)
+            
+            // 计算已完成任务的预估总耗时
+            const totalEstForDone = doneToday.reduce((a,b)=>a+(b.estimate*60),0);
+            
+            // 计算所有任务的预估总耗时 (包括未完成的)
+            const totalEst = allTodayTasks.reduce((a,b)=>a+(b.estimate*60),0);
+            
+            // 计算实际总耗时
+            const totalAct = doneToday.reduce((a,b)=>a+b.actualDuration,0);
+            
+            // 效率差: 已完成任务的预估总耗时 - 实际总耗时 (正数表示快, 负数表示慢)
+            const efficiencyDiff = totalEstForDone - totalAct; 
+            
+            const count = totalCount;
+            const successCount = doneToday.filter(h => h.actualDuration <= h.estimate*60).length;
+            const rate = count > 0 ? Math.round((successCount/count)*100) : 0;
+            
+            // totalEstimateDuration: 所有任务的预估总耗时 (秒) - 用于新的头部显示
+            // totalActualDuration: 已完成任务的实际总耗时 (秒)
+            return { efficiencyDiff, count, successCount, rate, totalActualDuration: totalAct, totalEstimateDuration: totalEst };
+        });
+
+        const currentMonthStats = computed(() => {
+            const year = currentMonth.value.getFullYear();
+            const month = currentMonth.value.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            
+            const res = [];
+            for(let i=1; i<=daysInMonth; i++) {
+                const d = new Date(year, month, i);
+                const dStr = d.toDateString();
+                const dayRecs = history.value.filter(h => new Date(h.timestamp).toDateString() === dStr);
+                const totalEst = dayRecs.reduce((a,b)=>a+(b.estimate*60),0);
+                const totalAct = dayRecs.reduce((a,b)=>a+b.actualDuration,0);
+                // diff: 实际 - 预估 (正数表示慢，负数表示快) - 用于日历UI
+                const diff = totalAct - totalEst; 
+                res.push({
+                    dateDisplay: `${i}`, count: dayRecs.length,
+                    diff: diff
+                });
+            }
+            return res;
+        });
+
+        const calendarOffset = computed(() => {
+            if(currentMonthStats.value.length === 0) return 0;
+            const year = currentMonth.value.getFullYear();
+            const month = currentMonth.value.getMonth();
+            let day = new Date(year, month, 1).getDay();
+            return day === 0 ? 6 : day - 1; 
+        });
+
+        const currentMonthDisplay = computed(() => currentMonth.value.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' }));
+        
+        const changeMonth = (delta) => {
+            const newMonth = new Date(currentMonth.value);
+            newMonth.setMonth(newMonth.getMonth() + delta);
+            currentMonth.value = newMonth;
+        };
+
+        const canGoBackMonth = computed(() => currentMonth.value > minMonth.value);
+        const canGoForwardMonth = computed(() => {
+            const nextMonth = new Date(currentMonth.value);
+            nextMonth.setMonth(nextMonth.getMonth() + 1);
+            return nextMonth.getFullYear() <= maxMonth.getFullYear() && nextMonth.getMonth() <= maxMonth.getMonth();
+        });
+
+        const getTaskStats = (ftId) => {
+            const recs = history.value.filter(h => h.fixedTemplateId === ftId);
+            if(recs.length === 0) return { avg: '-', min: '-', max: '-', successCount: 0 };
+            const times = recs.map(r => r.actualDuration);
+            const avg = Math.round(times.reduce((a,b)=>a+b,0)/times.length);
+            const min = Math.min(...times);
+            const max = Math.max(...times);
+            const successCount = recs.filter(r => r.actualDuration <= r.estimate*60).length;
+            return { avg: formatDuration(avg), min: formatDuration(min), max: formatDuration(max), successCount };
+        };
+
+        const getSubjectColor = (s, bg) => {
+            const c = { '语文':'bg-red-400', '数学':'bg-blue-400', '其他':'bg-slate-400' }[s] || 'bg-slate-400';
+            return bg ? c : c.replace('bg-', 'text-');
+        };
+        const getSubjectBadgeColor = (s) => getSubjectColor(s, true);
+        const getDiffText = (t) => {
+             const d = t.actualDuration - t.estimate*60;
+             if(Math.abs(d)<30) return '完美';
+             return d>0 ? `+${formatDuration(d)}` : `-${formatDuration(Math.abs(d))}`;
+        };
+        const getDiffClass = (t) => {
+             const d = t.actualDuration - t.estimate*60;
+             return d<=0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600';
+        };
+
+        const addNewTask = () => {
+            if(!form.content) return;
+            const task = { id: Date.now(), subject: form.subject, content: form.content, estimate: form.estimate, isFixed: form.isFixed };
+            if(form.isFixed) {
+                fixedTasks.value.push(task);
+                expandedTasks[task.id] = false;
+            } else { 
+                todaysTasks.value.push({ ...task, isCompleted: false });
+            }
+            form.content = ''; showToast.value = true; setTimeout(() => showToast.value = false, 2000);
+        };
+        const deleteFixedTask = (idx) => {
+            const taskId = fixedTasks.value[idx].id;
+            fixedTasks.value.splice(idx, 1);
+            delete expandedTasks[taskId];
+        };
+        const openEditModal = (t) => { 
+            // 确保找到正确的索引
+            const idx = fixedTasks.value.findIndex(ft => ft.id === t.id);
+            if (idx !== -1) {
+                editModal.data = {...t, idx: idx}; 
+                editModal.show=true; 
+            }
+        };
+        const saveFixedEdit = () => {
+            const { idx, content, estimate } = editModal.data;
+            if(idx > -1) { fixedTasks.value[idx].content=content; fixedTasks.value[idx].estimate=estimate; }
+            editModal.show=false;
+        };
+
+        const buyItem = (item) => {
+            if(totalPoints.value >= item.price && confirm(`兑换 ${item.name}?`)) {
+                totalPoints.value -= item.price; shopState.reward = item; shopState.revealed = true; shopState.opened = false;
+            }
+        };
+        const openBox = () => {
+            document.getElementById('magicAudio')?.play().catch(()=>{});
+            shopState.opened = true; confetti({ particleCount: 200, spread: 120, origin: { y: 0.6 }, zIndex: 1000 });
+        };
+        const resetShop = () => { shopState.revealed = false; shopState.reward = null; };
+        const addCustomItem = () => { if(newItem.name) { shopItems.value.push({...newItem}); showAddItemMode.value=false; newItem.name=''; } };
+
+        const startTimer = (t) => {
+            activeTask.value = t; totalEstimateSec.value = t.estimate * 60; elapsedTime.value = 0; startTimeStamp = Date.now();
+            isTimerActive.value = true; isPaused.value = false; totalPauseDuration = 0; clearInterval(timerInt);
+            timerInt = setInterval(() => {
+                if(!isPaused.value) { const current = Date.now(); elapsedTime.value = Math.round((current - startTimeStamp - totalPauseDuration) / 1000); }
+            }, 1000);
+        };
+        const togglePause = () => { isPaused.value = !isPaused.value; if (isPaused.value) pauseStartTime = Date.now(); else totalPauseDuration += (Date.now() - pauseStartTime); };
+        const cancelTimer = () => { if(confirm("放弃?")) { clearInterval(timerInt); isTimerActive.value=false; } };
+        
+        const finishTask = () => {
+            clearInterval(timerInt);
+            if(isPaused.value) totalPauseDuration += (Date.now() - pauseStartTime);
+            const actual = Math.round((Date.now() - startTimeStamp - totalPauseDuration) / 1000);
+            const est = totalEstimateSec.value; const diff = actual - est; const isSuccess = diff <= 0; const pts = isSuccess ? 100 : 30;
+            
+            const audio = document.getElementById('cheerAudio');
+            if(audio) { 
+                audio.volume = 1.0; 
+                audio.currentTime = 0; 
+                audio.play().catch(()=>{});
+                let vol = 1.0;
+                let fadeInt = setInterval(() => {
+                    if(vol > 0.1) { vol -= 0.1; audio.volume = vol; } 
+                    else { clearInterval(fadeInt); audio.pause(); }
+                }, 300);
+            }
+            if(isSuccess) confetti({ particleCount: 200, spread: 100, zIndex: 100 });
+
+            history.value.push({
+                id: Date.now(), content: activeTask.value.content, subject: activeTask.value.subject, estimate: activeTask.value.estimate,
+                actualDuration: actual, timestamp: Date.now(), isFixed: activeTask.value.isFixed, fixedTemplateId: activeTask.value.isFixed ? activeTask.value.id : null
+            });
+            
+            if(!activeTask.value.isFixed) { const tt = todaysTasks.value.find(x => x.id === activeTask.value.id); if(tt) { tt.isCompleted = true; tt.actualDuration = actual; } }
+            
+            totalPoints.value += pts;
+            
+            const finalEmoji = isSuccess ? successEmojis[Math.floor(Math.random() * successEmojis.length)] : "👍";
+
+            reward.estimate = activeTask.value.estimate; reward.actual = actual; reward.diff = diff; reward.points = pts; reward.isSuccess = isSuccess;
+            reward.title = isSuccess ? "挑战成功!" : "任务完成"; reward.message = isSuccess ? "时间管理大师！" : "稍微有点超时，下次加油！";
+            reward.emoji = finalEmoji; reward.show = true; isTimerActive.value = false;
+        };
+        const closeReward = () => { reward.show = false; };
+
+        const isOvertime = computed(() => elapsedTime.value > totalEstimateSec.value);
+        const formattedTime = computed(() => {
+            let s = elapsedTime.value; 
+            if(isOvertime.value) s = elapsedTime.value - totalEstimateSec.value; 
+            else s = totalEstimateSec.value - elapsedTime.value;
+            const m = Math.floor(s / 60).toString().padStart(2, '0'); 
+            const ss = (s % 60).toString().padStart(2, '0'); 
+            return `${m}:${ss}`;
+        });
+        const progressOffset = computed(() => { if(isOvertime.value) return 0; return (2 * Math.PI * 135) * (1 - (totalEstimateSec.value - elapsedTime.value) / totalEstimateSec.value); });
+        const timerColor = computed(() => { if(isOvertime.value) return '#ef4444'; const pct = (totalEstimateSec.value - elapsedTime.value) / totalEstimateSec.value; return pct > 0.5 ? '#4f46e5' : '#f97316'; });
+
+        const loadChartForTask = (ftId) => {
+            const ctx = document.getElementById('chart-' + ftId);
+            if(ctx) {
+                if(ctx.chart) ctx.chart.destroy();
+                const recs = history.value.filter(h => h.fixedTemplateId === ftId).sort((a,b)=>a.timestamp-b.timestamp).slice(-21);
+                
+                if (recs.length > 0) {
+                    ctx.chart = new Chart(ctx, {
+                        type: 'line',
+                        data: { labels: recs.map(h => new Date(h.timestamp).getDate() + '日'), datasets: [{ label: '耗时(分)', data: recs.map(h => (h.actualDuration/60).toFixed(1)), borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.1)', fill: true, tension: 0.4, pointRadius: 3 }] },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { beginAtZero: true } } }
+                    });
+                }
+            }
+        };
+
+        const loadStatsCharts = () => {
+            currentTab.value = 'stats';
+        };
+
+        // 数据导出功能
+        const exportHistory = () => {
+            if (history.value.length === 0) {
+                alert('没有可导出的学习历史记录。');
+                return;
+            }
+
+            const data = history.value.map(record => {
+                const estMin = record.estimate; // 分钟
+                const actualSec = record.actualDuration; // 秒
+                const actualMin = (actualSec / 60).toFixed(2);
+                const diffSec = actualSec - estMin * 60;
+                const diffDisplay = diffSec <= 0 ? `快了 ${formatDuration(Math.abs(diffSec))}` : `慢了 ${formatDuration(diffSec)}`;
+                
+                return {
+                    '日期时间': new Date(record.timestamp).toLocaleString('zh-CN'),
+                    '科目': record.subject,
+                    '内容': record.content,
+                    '是否固定任务': record.isFixed ? '是' : '否',
+                    '计划耗时(分钟)': estMin,
+                    '实际耗时(秒)': actualSec,
+                    '实际耗时(分钟)': parseFloat(actualMin),
+                    '效率差异': diffDisplay,
+                    '是否达标(实际 <= 计划)': diffSec <= 0 ? '是' : '否',
+                    '积分奖励': diffSec <= 0 ? 100 : 30
+                };
+            });
+
+            // 将数组数据转换成工作表
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "学习历史");
+
+            // 导出文件
+            XLSX.writeFile(wb, `学习历史记录_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.xlsx`);
+        };
+
+
+        return {
+            currentTab, showShop, showToast, showAddItemMode, newItem, subjects, iconPack, currentDateDisplay, totalPoints, fixedTasks, todaysTasksDisplay, fixedTasksDisplay, shopItems,
+            form, editModal, shopState, reward, isTimerActive, isPaused, activeTask, isOvertime, formattedTime, progressOffset, timerColor, appVersion,
+            statsToday, currentMonthStats, calendarOffset,
+            currentMonthDisplay, changeMonth, canGoBackMonth, canGoForwardMonth,
+            addNewTask, deleteFixedTask, openEditModal, saveFixedEdit, buyItem, openBox, resetShop, addCustomItem,
+            startTimer, togglePause, finishTask, cancelTimer, loadStatsCharts, closeReward,
+            getSubjectBadgeColor, getSubjectColor, getDiffClass, getDiffText, getTaskStats, formatDuration, formatDiff,
+            
+            expandedTasks,
+            toggleExpansion,
+            // 导出功能
+            exportHistory 
+        };
+    }
+}).mount('#app');
+</script>
+</body>
+</html>
